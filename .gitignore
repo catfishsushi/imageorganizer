@@ -1,0 +1,19 @@
+# Dart / Pub
+.dart_tool/
+.packages
+build/
+pubspec.lock
+
+# Local config & caches (per-machine, contain absolute paths)
+server/config.json
+**/thumb-cache/
+*.log
+
+# Editor / OS
+.claude/
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+desktop.ini
