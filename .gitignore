@@ -1,8 +1,6 @@
-# Dart / Pub
-.dart_tool/
-.packages
-build/
-pubspec.lock
+# Node
+node_modules/
+npm-debug.log*
 
 # Local config & caches (per-machine, contain absolute paths)
 server/config.json
