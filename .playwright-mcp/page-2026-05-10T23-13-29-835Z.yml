@@ -1,0 +1,6 @@
+- main [ref=e2]:
+  - generic [ref=e10]:
+    - button "Back to folders" [ref=e11] [cursor=pointer]: ←
+    - generic [ref=e12]:
+      - generic [ref=e13]: a.png
+      - generic [ref=e14]: 1 / 1
