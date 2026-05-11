@@ -1,8 +1,0 @@
-- main [ref=e2]:
-  - generic [ref=e3]:
-    - heading "Pick a folder" [level=1] [ref=e5]
-    - list [ref=e6]:
-      - listitem [ref=e7]:
-        - text: image-organizer-test-root
-        - generic [ref=e8]: C:\Users\Ted\AppData\Local\Temp\image-organizer-test-root
-    - paragraph
