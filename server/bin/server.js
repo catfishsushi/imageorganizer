@@ -9,10 +9,8 @@ const { foldersHandler } = require('../lib/handlers/folders');
 const { filesHandler } = require('../lib/handlers/files');
 const { imageHandler } = require('../lib/handlers/image');
 const { thumbHandler } = require('../lib/handlers/thumb');
-const { deleteHandler } = require('../lib/handlers/delete');
-const { restoreHandler } = require('../lib/handlers/restore');
+const { pileMoveHandler, pileRestoreHandler } = require('../lib/handlers/pile');
 const { ThumbCache } = require('../lib/thumb_cache');
-const { Trash } = require('../lib/trash');
 
 const configPath = path.resolve(__dirname, '..', 'config.json');
 let config;
@@ -24,7 +22,6 @@ try {
 }
 
 const thumbCache = new ThumbCache(config.thumbCacheDir);
-const trash = new Trash(config.trashDir);
 
 const PUBLIC_DIR = path.resolve(__dirname, '..', 'public');
 
@@ -40,7 +37,7 @@ app.use((req, _res, next) => {
 // CORS — local LAN single-user, permissive is fine.
 app.use((_req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   next();
 });
@@ -54,8 +51,8 @@ app.get('/api/folders', foldersHandler(config));
 app.get('/api/files', filesHandler(config));
 app.get('/api/image', imageHandler(config));
 app.get('/api/thumb', thumbHandler(config, thumbCache));
-app.delete('/api/file', deleteHandler(config, thumbCache, trash));
-app.post('/api/restore', restoreHandler(config, trash));
+app.post('/api/pile', pileMoveHandler(config, thumbCache));
+app.post('/api/restore', pileRestoreHandler(config, thumbCache));
 
 // Static PWA shell. Service worker should never be cached by upstream proxies.
 app.use(express.static(PUBLIC_DIR, {
@@ -82,7 +79,6 @@ app.listen(config.port, HOST, () => {
   console.log(`image-culling server listening on http://${HOST}:${config.port}`);
   console.log(`roots: ${JSON.stringify(config.roots)}`);
   console.log(`thumb cache: ${config.thumbCacheDir}`);
-  console.log(`trash: ${config.trashDir}`);
 });
 
 module.exports = { app, config };

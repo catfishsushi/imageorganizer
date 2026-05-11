@@ -368,26 +368,29 @@ function flyOff(direction) {
   tintRight.style.opacity = 0;
 }
 
-function commitKeep() {
-  flyOff(1);
-  setTimeout(() => advance({ kept: true, swipeDirection: 1 }), 200);
-}
-
-function commitDelete() {
+function commitPile(kind) {
+  const direction = kind === 'keep' ? 1 : -1;
+  const verbPast = kind === 'keep' ? 'Keep' : 'Delete';
   const file = state.files[state.index];
-  flyOff(-1);
-  fetch(`/api/file?path=${encodeURIComponent(file.path)}`, { method: 'DELETE' })
+  flyOff(direction);
+  fetch(`/api/pile?to=${kind}&path=${encodeURIComponent(file.path)}`, { method: 'POST' })
     .then(async (r) => {
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${r.status}`);
+      }
       const body = await r.json();
-      state.undoStack.push({ trashId: body.trashId, name: file.name });
-      setTimeout(() => advance({ deleted: true, swipeDirection: -1 }), 200);
+      state.undoStack.push({ kind, currentPath: body.newPath, name: file.name });
+      const flags = kind === 'keep' ? { kept: true } : { deleted: true };
+      setTimeout(() => advance({ ...flags, swipeDirection: direction }), 200);
     })
-    .catch(() => {
-      showToast('Delete failed');
+    .catch((e) => {
+      showToast(`${verbPast} failed: ${e.message}`);
       springBack();
     });
 }
+const commitKeep = () => commitPile('keep');
+const commitDelete = () => commitPile('delete');
 
 // ---- Tap & double-tap ----
 function handleTap(x, y) {
@@ -457,13 +460,14 @@ async function undoLast() {
   if (!entry) return;
   undoBtn.disabled = true;
   try {
-    const res = await fetch(`/api/restore?id=${encodeURIComponent(entry.trashId)}`, { method: 'POST' });
+    const res = await fetch(`/api/restore?path=${encodeURIComponent(entry.currentPath)}`, { method: 'POST' });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || `HTTP ${res.status}`);
     }
     state.undoStack.pop();
-    state.deleted = Math.max(0, state.deleted - 1);
+    if (entry.kind === 'keep') state.kept = Math.max(0, state.kept - 1);
+    else state.deleted = Math.max(0, state.deleted - 1);
     showToast(`Restored ${entry.name}`, 1800, 'success');
   } catch (e) {
     showToast(`Undo failed: ${e.message}`);
@@ -474,7 +478,7 @@ async function undoLast() {
 }
 
 // ---- Buttons ----
-$('placeholder-skip').addEventListener('click', () => advance({ kept: true }));
+$('placeholder-skip').addEventListener('click', () => advance());
 $('placeholder-delete').addEventListener('click', () => commitDelete());
 $('browser-back').addEventListener('click', () => {
   showView('folders');

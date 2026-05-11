@@ -45,13 +45,13 @@ Windows PC (Node.js/Express HTTP server)
 | `GET` | `/api/files?path=<dir>` | List image files in the given directory |
 | `GET` | `/api/image?path=<file>` | Serve a full image file |
 | `GET` | `/api/thumb?path=<file>` | Serve a downscaled thumbnail (max 1200px long edge) |
-| `DELETE` | `/api/file?path=<file>` | Move the specified file to the configured trash dir; returns `{trashId}` |
-| `POST` | `/api/restore?id=<trashId>` | Restore a previously trashed file to its original path |
+| `POST` | `/api/pile?path=<file>&to=keep\|delete` | Move the file into `_kept` or `_deleted` sibling subfolder; returns `{newPath}` |
+| `POST` | `/api/restore?path=<fileInPile>` | Move a file out of `_kept` or `_deleted` back to the parent folder; returns `{newPath}` |
 
 ### Security & Safety
 - The server only allows access to paths within a set of **configured root folders** (defined in a config file or hardcoded list). Requests outside those paths are rejected with `403 Forbidden`.
 - No authentication required (local network only), but a simple shared secret header (`X-App-Token`) can be added as an optional future enhancement.
-- Deletion moves the file to a configurable trash directory (`trash_dir`) with a sidecar JSON containing the original path. An **Undo** button in the browser view restores the most recent delete via `POST /api/restore`. The swipe gesture itself is the confirmation step — there is no separate "Are you sure?" prompt. The trash is never auto-emptied; the user clears it manually when ready.
+- **Both keep and delete are non-destructive moves.** Right-swipe moves the file into a `_kept` subfolder inside the folder being culled; left-swipe moves it into a `_deleted` sibling. The original folder shrinks as you cull, so restarting the app on the same folder picks up only undecided files. On filename collisions inside a pile, the destination is auto-suffixed `-1`, `-2`, etc. An **Undo** button (top-right of the browser view, hidden when there's nothing to undo) reverses the most recent action — keep or delete — using `POST /api/restore`. The swipe gesture itself is the confirmation step; there is no separate "Are you sure?" prompt. The `_kept` and `_deleted` folders are never auto-emptied; the user manages them via Explorer when ready.
 
 ### Thumbnail Generation
 - Thumbnails generated on-the-fly using the `sharp` Node module
@@ -83,10 +83,10 @@ Windows PC (Node.js/Express HTTP server)
 - Preloads the next image in the background for smooth transitions
 
 #### 3. Swipe Interaction
-- **Swipe left** → Move the image to trash (with a red overlay during the drag)
-- **Swipe right** → Keep the image, advance to the next
+- **Swipe left** → Move the image into the `_deleted` subfolder (with a red overlay during the drag)
+- **Swipe right** → Move the image into the `_kept` subfolder (with a green overlay during the drag)
 - **Tap** → Toggle full-screen preview (swaps the thumbnail for the full-resolution image and enables pinch-to-zoom)
-- **Undo button** (in the browser-view header, shown only when there's something to undo) — restores the most recent trashed file; toast confirms with the filename
+- **Undo button** (in the browser-view header, shown only when there's something to undo) — reverses the most recent action (keep or delete) by moving the file back out of its pile; toast confirms with the filename
 - Visual drag feedback: image follows the finger, tilts slightly, colour tint appears (red = delete, green = keep)
 - After swipe resolves, the next image slides in from the opposite side
 
@@ -113,12 +113,11 @@ A simple `config.json` file in the server directory:
     "C:\\Users\\YourName\\Pictures",
     "D:\\Photos\\2024"
   ],
-  "thumb_cache_dir": "C:\\Temp\\pwa-thumb-cache",
-  "trash_dir": "C:\\Temp\\pwa-trash"
+  "thumb_cache_dir": "C:\\Temp\\pwa-thumb-cache"
 }
 ```
 
-`trash_dir` is optional; it defaults to a `trash` folder alongside `thumb_cache_dir` if omitted.
+There is no separate trash setting — each root folder gets its own `_kept` and `_deleted` subfolders created lazily on first use.
 
 ---
 
@@ -141,7 +140,9 @@ A simple `config.json` file in the server directory:
 
 ## Out of Scope (Future Enhancements)
 
-- Auto-emptying / cleanup of the trash directory (user manages it manually for now)
+- Auto-emptying / cleanup of the `_kept` and `_deleted` subfolders (user manages them manually via Explorer for now)
+- Configurable pile-folder names (currently hardcoded `_kept` / `_deleted`)
+- Browsing into `_kept` / `_deleted` from within the PWA
 - Multi-folder browsing / recursive subfolder view
 - Rating/tagging images (e.g. 1–5 star scores or color labels written to XMP/EXIF) as an alternative to the binary keep/delete workflow
 - Authentication / HTTPS

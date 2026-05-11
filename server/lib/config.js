@@ -50,18 +50,7 @@ function loadConfig(configPath) {
   }
   const thumbCacheDir = path.resolve(raw.thumb_cache_dir);
 
-  // trash_dir is optional; defaults to a sibling of thumb_cache_dir.
-  let trashDir;
-  if (raw.trash_dir == null) {
-    trashDir = path.join(path.dirname(thumbCacheDir), 'trash');
-  } else {
-    if (typeof raw.trash_dir !== 'string' || !raw.trash_dir.trim()) {
-      fail('"trash_dir" must be a non-empty string when provided');
-    }
-    trashDir = path.resolve(raw.trash_dir);
-  }
-
-  return { port, roots, thumbCacheDir, trashDir };
+  return { port, roots, thumbCacheDir };
 }
 
 module.exports = { loadConfig };
