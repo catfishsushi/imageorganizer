@@ -165,6 +165,7 @@ button.link-button {
   font-size: 14px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.4);
 }
+.toast.toast-success { background: var(--keep); }
 
 /* ---- Completion ---- */
 #done {

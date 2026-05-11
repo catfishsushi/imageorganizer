@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE = 'image-cull-shell-v1';
+const CACHE = 'image-cull-shell-v2';
 const SHELL = [
   '/',
   '/index.html',

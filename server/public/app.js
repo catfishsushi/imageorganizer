@@ -16,6 +16,7 @@ const tintLeft = $('tint-left');
 const tintRight = $('tint-right');
 const browserFilename = $('browser-filename');
 const browserCounter = $('browser-counter');
+const undoBtn = $('undo-btn');
 const toast = $('toast');
 const banner = $('banner');
 const bannerMsg = $('banner-message');
@@ -33,6 +34,7 @@ const state = {
   ty: 0,
   preloader: null,
   currentFolderPath: null,
+  undoStack: [], // [{ trashId, name }]
 };
 
 let lastDoneFn = null; // for banner retry
@@ -57,11 +59,15 @@ $('banner-retry').addEventListener('click', () => {
 });
 
 let toastTimer = null;
-function showToast(message, ms = 2000) {
+function showToast(message, ms = 2000, kind = 'error') {
   toast.textContent = message;
   toast.classList.remove('hidden');
+  toast.classList.toggle('toast-success', kind === 'success');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toast.classList.add('hidden'), ms);
+  toastTimer = setTimeout(() => {
+    toast.classList.add('hidden');
+    toast.classList.remove('toast-success');
+  }, ms);
 }
 
 // ---- API ----
@@ -75,8 +81,9 @@ async function api(path, opts) {
   return res;
 }
 const imageUrl = (p) => `/api/image?path=${encodeURIComponent(p)}`;
+const thumbUrl = (p) => `/api/thumb?path=${encodeURIComponent(p)}`;
 
-// ---- Folder list (Phase 6) ----
+// ---- Folder list ----
 async function loadFolders() {
   foldersStatus.textContent = '';
   folderList.innerHTML = '';
@@ -116,6 +123,8 @@ async function openFolder(folder) {
     state.index = 0;
     state.kept = 0;
     state.deleted = 0;
+    state.undoStack = [];
+    updateUndoButton();
     showView('browser');
     renderCurrent();
   } catch (e) {
@@ -123,22 +132,13 @@ async function openFolder(folder) {
   }
 }
 
-// ---- Browser rendering (Phase 7) ----
-function resetTransformState() {
-  state.scale = 1;
-  state.tx = 0;
-  state.ty = 0;
-  state.preview = false;
-  cardImg.classList.remove('preview', 'dragging');
-  applyTransform();
-}
-
+// ---- Browser rendering ----
 function applyTransform({ rotateDeg = 0 } = {}) {
   cardImg.style.transform =
     `translate(${state.tx}px, ${state.ty}px) rotate(${rotateDeg}deg) scale(${state.scale})`;
 }
 
-function renderCurrent() {
+function renderCurrent({ slideInFrom = 0 } = {}) {
   if (state.index >= state.files.length) {
     finish();
     return;
@@ -146,13 +146,31 @@ function renderCurrent() {
   const f = state.files[state.index];
   cardPlaceholder.classList.add('hidden');
   cardImg.classList.remove('hidden');
-  resetTransformState();
+
+  // Snap to start position with no transition.
+  cardImg.classList.add('dragging');
+  cardImg.classList.remove('preview');
+  state.preview = false;
+  state.scale = 1;
+  state.ty = 0;
+  state.tx = slideInFrom * window.innerWidth;
+  applyTransform();
+
   cardImg.onerror = onImageError;
   cardImg.onload = onImageLoad;
-  cardImg.src = imageUrl(f.path);
+  cardImg.src = thumbUrl(f.path);
   browserFilename.textContent = f.name;
   browserCounter.textContent = `${state.index + 1} / ${state.files.length}`;
   preloadNext();
+
+  // Re-enable transition and animate into place on next frame.
+  requestAnimationFrame(() => {
+    cardImg.classList.remove('dragging');
+    state.tx = 0;
+    applyTransform();
+  });
+
+  updateUndoButton();
 }
 
 function onImageLoad() {
@@ -168,14 +186,14 @@ function preloadNext() {
   if (!next) return;
   if (state.preloader) state.preloader.onload = null;
   state.preloader = new Image();
-  state.preloader.src = imageUrl(next.path);
+  state.preloader.src = thumbUrl(next.path);
 }
 
-function advance({ kept = false, deleted = false } = {}) {
+function advance({ kept = false, deleted = false, swipeDirection = 0 } = {}) {
   if (kept) state.kept++;
   if (deleted) state.deleted++;
   state.index++;
-  renderCurrent();
+  renderCurrent({ slideInFrom: swipeDirection ? -swipeDirection : 0 });
 }
 
 function finish() {
@@ -184,10 +202,10 @@ function finish() {
 }
 
 // ---- Swipe + pinch gesture engine ----
-const pointers = new Map(); // pointerId -> {x,y,startX,startY,startTime}
-let gestureMode = null; // 'swipe' | 'pinch' | 'pan' | null
-let pinchStart = null;  // {dist, scale, centroidX, centroidY, tx, ty}
-let swipeStart = null;  // {x, y, t}
+const pointers = new Map();
+let gestureMode = null;
+let pinchStart = null;
+let swipeStart = null;
 const COMMIT_FRAC = 0.30;
 const VELOCITY_PX_PER_MS = 0.6;
 const TAP_MOVE = 6;
@@ -202,7 +220,6 @@ let lastTapY = 0;
 function pointerInfo(e) {
   return { x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY, startTime: performance.now() };
 }
-
 function centroidOf(map) {
   let sx = 0, sy = 0, n = 0;
   for (const p of map.values()) { sx += p.x; sy += p.y; n++; }
@@ -229,7 +246,7 @@ cardStage.addEventListener('pointerdown', (e) => {
       swipeStart = { x: e.clientX, y: e.clientY, t: performance.now() };
       cardImg.classList.add('dragging');
     } else {
-      gestureMode = null; // preview mode at scale 1 — wait for tap or pinch
+      gestureMode = null;
     }
   } else if (pointers.size === 2) {
     gestureMode = 'pinch';
@@ -257,10 +274,9 @@ cardStage.addEventListener('pointermove', (e) => {
     const dy = p.y - p.startY;
     state.tx = dx;
     state.ty = dy * 0.2;
-    const rotateDeg = dx / 20;
-    applyTransform({ rotateDeg });
+    applyTransform({ rotateDeg: dx / 20 });
     const vw = window.innerWidth;
-    const threshold = vw * 0.15; // start showing tint earlier than commit
+    const threshold = vw * 0.15;
     tintLeft.style.opacity = dx < 0 ? clamp(-dx / threshold, 0, 1) : 0;
     tintRight.style.opacity = dx > 0 ? clamp(dx / threshold, 0, 1) : 0;
   } else if (gestureMode === 'pinch' && pointers.size >= 2) {
@@ -268,7 +284,6 @@ cardStage.addEventListener('pointermove', (e) => {
     if (pinchStart.dist > 0) {
       const factor = dist / pinchStart.dist;
       const newScale = clamp(pinchStart.scale * factor, SCALE_MIN, SCALE_MAX);
-      // Anchor centroid: keep the world-point under the centroid fixed.
       const W = window.innerWidth, H = window.innerHeight;
       const cx = pinchStart.centroidX, cy = pinchStart.centroidY;
       const worldX = (cx - W / 2 - pinchStart.tx) / pinchStart.scale;
@@ -279,11 +294,8 @@ cardStage.addEventListener('pointermove', (e) => {
       applyTransform();
     }
   } else if (gestureMode === 'pan') {
-    const dx = p.x - p.startX;
-    const dy = p.y - p.startY;
-    // Use a baseline so subsequent moves are relative; recompute "start" each move:
-    state.tx += dx;
-    state.ty += dy;
+    state.tx += p.x - p.startX;
+    state.ty += p.y - p.startY;
     p.startX = p.x;
     p.startY = p.y;
     applyTransform();
@@ -319,7 +331,6 @@ function endPointer(e) {
       springBack();
     }
   } else if (gestureMode === 'pinch' && pointers.size < 2) {
-    // If one finger lifted but another remains, transition to pan mode
     if (pointers.size === 1 && state.scale > 1) {
       gestureMode = 'pan';
       const remaining = [...pointers.values()][0];
@@ -327,7 +338,6 @@ function endPointer(e) {
       remaining.startY = remaining.y;
     } else {
       gestureMode = null;
-      // If we pinched back under 1.0 in preview mode, leave preview
       if (state.scale <= 1.001 && state.preview) {
         exitPreview();
       }
@@ -358,26 +368,31 @@ function flyOff(direction) {
   tintRight.style.opacity = 0;
 }
 
-function commitKeep() {
-  flyOff(1);
-  setTimeout(() => advance({ kept: true }), 200);
-}
-
-function commitDelete() {
-  flyOff(-1);
+function commitPile(kind) {
+  const direction = kind === 'keep' ? 1 : -1;
+  const verbPast = kind === 'keep' ? 'Keep' : 'Delete';
   const file = state.files[state.index];
-  fetch(`/api/file?path=${encodeURIComponent(file.path)}`, { method: 'DELETE' })
-    .then((r) => {
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      setTimeout(() => advance({ deleted: true }), 200);
+  flyOff(direction);
+  fetch(`/api/pile?to=${kind}&path=${encodeURIComponent(file.path)}`, { method: 'POST' })
+    .then(async (r) => {
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${r.status}`);
+      }
+      const body = await r.json();
+      state.undoStack.push({ kind, currentPath: body.newPath, name: file.name });
+      const flags = kind === 'keep' ? { kept: true } : { deleted: true };
+      setTimeout(() => advance({ ...flags, swipeDirection: direction }), 200);
     })
-    .catch(() => {
-      showToast('Delete failed');
+    .catch((e) => {
+      showToast(`${verbPast} failed: ${e.message}`);
       springBack();
     });
 }
+const commitKeep = () => commitPile('keep');
+const commitDelete = () => commitPile('delete');
 
-// ---- Tap & double-tap (preview mode + double-tap zoom) ----
+// ---- Tap & double-tap ----
 function handleTap(x, y) {
   const now = performance.now();
   const isDouble = now - lastTapTime < 280
@@ -400,8 +415,11 @@ function handleTap(x, y) {
 }
 
 function enterPreview() {
+  // Swap thumb for full-res image and enter preview mode.
   state.preview = true;
   cardImg.classList.add('preview');
+  const f = state.files[state.index];
+  if (f) cardImg.src = imageUrl(f.path);
 }
 function exitPreview() {
   state.preview = false;
@@ -410,6 +428,8 @@ function exitPreview() {
   state.tx = 0;
   state.ty = 0;
   applyTransform();
+  const f = state.files[state.index];
+  if (f) cardImg.src = thumbUrl(f.path);
 }
 
 function doubleTapZoom(x, y) {
@@ -429,11 +449,37 @@ function doubleTapZoom(x, y) {
   applyTransform();
 }
 
-// ---- Placeholder buttons ----
-$('placeholder-skip').addEventListener('click', () => advance({ kept: true }));
-$('placeholder-delete').addEventListener('click', () => commitDelete());
+// ---- Undo ----
+function updateUndoButton() {
+  if (!undoBtn) return;
+  undoBtn.classList.toggle('hidden', state.undoStack.length === 0);
+}
 
-// ---- Back / done buttons ----
+async function undoLast() {
+  const entry = state.undoStack[state.undoStack.length - 1];
+  if (!entry) return;
+  undoBtn.disabled = true;
+  try {
+    const res = await fetch(`/api/restore?path=${encodeURIComponent(entry.currentPath)}`, { method: 'POST' });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `HTTP ${res.status}`);
+    }
+    state.undoStack.pop();
+    if (entry.kind === 'keep') state.kept = Math.max(0, state.kept - 1);
+    else state.deleted = Math.max(0, state.deleted - 1);
+    showToast(`Restored ${entry.name}`, 1800, 'success');
+  } catch (e) {
+    showToast(`Undo failed: ${e.message}`);
+  } finally {
+    undoBtn.disabled = false;
+    updateUndoButton();
+  }
+}
+
+// ---- Buttons ----
+$('placeholder-skip').addEventListener('click', () => advance());
+$('placeholder-delete').addEventListener('click', () => commitDelete());
 $('browser-back').addEventListener('click', () => {
   showView('folders');
   loadFolders();
@@ -442,6 +488,7 @@ $('done-back').addEventListener('click', () => {
   showView('folders');
   loadFolders();
 });
+if (undoBtn) undoBtn.addEventListener('click', undoLast);
 
 // ---- SW registration ----
 if ('serviceWorker' in navigator) {

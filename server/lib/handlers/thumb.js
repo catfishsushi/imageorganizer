@@ -6,8 +6,8 @@ const sharp = require('sharp');
 const { resolveSafe } = require('../path_guard');
 const { ALLOWED_EXT } = require('./files');
 
-const LONG_EDGE = 400;
-const JPEG_QUALITY = 80;
+const LONG_EDGE = 1200;
+const JPEG_QUALITY = 82;
 
 function thumbHandler(config, cache) {
   return async (req, res, next) => {
