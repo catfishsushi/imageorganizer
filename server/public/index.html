@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+  <meta name="theme-color" content="#101012" />
+  <title>Image Cull</title>
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" href="/icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <link rel="stylesheet" href="/app.css" />
+</head>
+<body>
+  <main id="app">
+    <!-- Folder list -->
+    <section id="folders" class="view active">
+      <header class="view-header"><h1>Pick a folder</h1></header>
+      <ul id="folder-list" class="folder-list" aria-live="polite"></ul>
+      <p id="folders-status" class="status"></p>
+    </section>
+
+    <!-- Image browser -->
+    <section id="browser" class="view">
+      <header class="browser-header">
+        <button id="browser-back" class="link-button" type="button" aria-label="Back to folders">&larr;</button>
+        <div class="browser-info">
+          <div id="browser-filename" class="filename"></div>
+          <div id="browser-counter" class="counter"></div>
+        </div>
+        <button id="undo-btn" class="link-button hidden" type="button" aria-label="Undo last delete">Undo</button>
+      </header>
+      <div id="card-stage" class="card-stage">
+        <div id="tint-left" class="tint tint-left"></div>
+        <div id="tint-right" class="tint tint-right"></div>
+        <img id="card-img" class="card-img" alt="" draggable="false" />
+        <div id="card-placeholder" class="card-placeholder hidden">
+          <p>Image failed to load.</p>
+          <div class="row">
+            <button id="placeholder-skip" type="button">Skip</button>
+            <button id="placeholder-delete" type="button" class="danger">Delete</button>
+          </div>
+        </div>
+      </div>
+      <div id="toast" class="toast hidden"></div>
+    </section>
+
+    <!-- Completion -->
+    <section id="done" class="view">
+      <h2>All done</h2>
+      <p id="done-summary" class="summary"></p>
+      <button id="done-back" type="button">Back to folders</button>
+    </section>
+
+    <div id="banner" class="banner hidden">
+      <span id="banner-message">Server unreachable.</span>
+      <button id="banner-retry" type="button">Retry</button>
+    </div>
+  </main>
+  <script src="/app.js" type="module"></script>
+</body>
+</html>

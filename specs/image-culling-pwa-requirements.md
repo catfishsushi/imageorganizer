@@ -13,7 +13,7 @@ Android Phone (Chrome PWA)
         |
         |  HTTP over local WiFi
         |
-Windows PC (Dart/shelf HTTP server)
+Windows PC (Node.js/Express HTTP server)
         |
         |  File system access
         |
@@ -22,16 +22,16 @@ Windows PC (Dart/shelf HTTP server)
 
 ### Components
 
-1. **Windows Backend** — A small HTTP server written in Dart (using the `shelf` package), running on the Windows PC. Exposes a REST API for browsing folders and deleting files.
+1. **Windows Backend** — A small HTTP server written in Node.js (using `express`), running on the Windows PC. Exposes a REST API for browsing folders, generating thumbnails, and moving files to a trash directory (with restore).
 2. **PWA Frontend** — A single HTML/CSS/JS app served by the backend (or hosted statically). Runs in Chrome on Android and communicates with the backend via `fetch()`.
 
 ---
 
-## Backend Requirements (Dart / shelf)
+## Backend Requirements (Node.js / Express)
 
 ### General
-- Written in Dart using the `shelf` and `shelf_router` packages
-- Runs as a standalone executable on Windows
+- Written in Node.js (18+) using `express` for routing and `sharp` for image processing
+- Runs as a standalone process on Windows
 - Listens on a configurable port (default: `8080`)
 - Serves the PWA frontend static files from a `/public` directory
 - CORS headers enabled for local development flexibility
@@ -44,18 +44,20 @@ Windows PC (Dart/shelf HTTP server)
 | `GET` | `/api/folders` | List configured root folders available to browse |
 | `GET` | `/api/files?path=<dir>` | List image files in the given directory |
 | `GET` | `/api/image?path=<file>` | Serve a full image file |
-| `GET` | `/api/thumb?path=<file>` | Serve a downscaled thumbnail (max 400px wide) |
-| `DELETE` | `/api/file?path=<file>` | Delete the specified file from disk |
+| `GET` | `/api/thumb?path=<file>` | Serve a downscaled thumbnail (max 1200px long edge) |
+| `DELETE` | `/api/file?path=<file>` | Move the specified file to the configured trash dir; returns `{trashId}` |
+| `POST` | `/api/restore?id=<trashId>` | Restore a previously trashed file to its original path |
 
 ### Security & Safety
 - The server only allows access to paths within a set of **configured root folders** (defined in a config file or hardcoded list). Requests outside those paths are rejected with `403 Forbidden`.
 - No authentication required (local network only), but a simple shared secret header (`X-App-Token`) can be added as an optional future enhancement.
-- Deletion is permanent (no recycle bin). A confirmation step is handled on the frontend.
+- Deletion moves the file to a configurable trash directory (`trash_dir`) with a sidecar JSON containing the original path. An **Undo** button in the browser view restores the most recent delete via `POST /api/restore`. The swipe gesture itself is the confirmation step — there is no separate "Are you sure?" prompt. The trash is never auto-emptied; the user clears it manually when ready.
 
 ### Thumbnail Generation
-- Thumbnails generated on-the-fly using Dart's `image` package
-- Cached in a temp directory to avoid regenerating on every request
-- Cache keyed by file path + last-modified timestamp
+- Thumbnails generated on-the-fly using the `sharp` Node module
+- Resized to a 1200px long edge, JPEG quality ~82 — sized to look crisp full-screen on a typical phone while remaining a fraction of the original byte size
+- Cached on disk in `thumb_cache_dir` to avoid regenerating on every request
+- Cache keyed by `sha1(absPath + ":" + mtimeMs)`; a file edit produces a fresh key automatically
 
 ---
 
@@ -81,11 +83,12 @@ Windows PC (Dart/shelf HTTP server)
 - Preloads the next image in the background for smooth transitions
 
 #### 3. Swipe Interaction
-- **Swipe left** → Delete the image (with a brief red overlay confirmation)
+- **Swipe left** → Move the image to trash (with a red overlay during the drag)
 - **Swipe right** → Keep the image, advance to the next
-- **Tap** → Toggle a full-screen preview (pinch-to-zoom optional, nice to have)
+- **Tap** → Toggle full-screen preview (swaps the thumbnail for the full-resolution image and enables pinch-to-zoom)
+- **Undo button** (in the browser-view header, shown only when there's something to undo) — restores the most recent trashed file; toast confirms with the filename
 - Visual drag feedback: image follows the finger, tilts slightly, colour tint appears (red = delete, green = keep)
-- After swipe resolves, the next image slides in automatically
+- After swipe resolves, the next image slides in from the opposite side
 
 #### 4. Completion Screen
 - Shown when all images in the folder have been reviewed
@@ -110,15 +113,18 @@ A simple `config.json` file in the server directory:
     "C:\\Users\\YourName\\Pictures",
     "D:\\Photos\\2024"
   ],
-  "thumb_cache_dir": "C:\\Temp\\pwa-thumb-cache"
+  "thumb_cache_dir": "C:\\Temp\\pwa-thumb-cache",
+  "trash_dir": "C:\\Temp\\pwa-trash"
 }
 ```
+
+`trash_dir` is optional; it defaults to a `trash` folder alongside `thumb_cache_dir` if omitted.
 
 ---
 
 ## File Filtering
 
-- Only show files with extensions: `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`, `.heic`
+- Only show files with extensions: `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`
 - Hidden files and system files are excluded
 - Files are sorted by name (ascending) by default
 
@@ -135,9 +141,9 @@ A simple `config.json` file in the server directory:
 
 ## Out of Scope (Future Enhancements)
 
-- Undo delete (move to a trash folder instead of permanent delete)
+- Auto-emptying / cleanup of the trash directory (user manages it manually for now)
 - Multi-folder browsing / recursive subfolder view
-- Rating/tagging images instead of binary keep/delete
+- Rating/tagging images (e.g. 1–5 star scores or color labels written to XMP/EXIF) as an alternative to the binary keep/delete workflow
 - Authentication / HTTPS
 - iOS support
 - Automatic server startup on Windows boot (as a service)
@@ -147,16 +153,18 @@ A simple `config.json` file in the server directory:
 ## Development Setup
 
 ### Prerequisites
-- [Dart SDK](https://dart.dev/get-dart) installed on the Windows PC
+- [Node.js 18+](https://nodejs.org) installed on the Windows PC
 - Chrome on Android phone
 - Both devices on the same WiFi network
 
 ### Running the Server
 ```bash
 cd server
-dart pub get
-dart run bin/server.dart
+npm install
+npm start
 ```
+
+Or double-click `run-server.bat`.
 
 ### Accessing the PWA
 Open Chrome on your Android phone and navigate to:
